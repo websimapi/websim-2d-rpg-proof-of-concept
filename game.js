@@ -33,8 +33,10 @@ const state = {
   playerSprite: null,
   player: {
     x: 5, y: 5, // tile coordinates (float for smooth)
+    tx: 5, ty: 5, // target tile (for grid movement)
+    moving: false,
     dir: 'down',
-    speed: 3, // tiles per second
+    speed: 6, // tiles per second (used to interpolate between tiles)
     hp: 20,
     w: 12, h: 14, // sprite size in px
   },
@@ -68,11 +70,15 @@ function pushMessage(text) {
   document.getElementById('hp-val').textContent = state.player.hp;
 }
 
-// Input handling
+// Input handling: start grid move when a direction pressed (discrete)
 function setupInput() {
   window.addEventListener('keydown', e => {
     if (e.key === ' ' || e.key === 'Enter') e.preventDefault();
-    state.keys[e.key.toLowerCase()] = true;
+    const k = e.key.toLowerCase();
+    state.keys[k] = true;
+    if (['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d'].includes(k)) {
+      tryStartMoveFromInput();
+    }
     if (e.key === 'Escape') toggleMenu(true);
   });
   window.addEventListener('keyup', e => state.keys[e.key.toLowerCase()] = false);
@@ -82,6 +88,7 @@ function setupInput() {
     btn.addEventListener('pointerdown', e=> {
       const dir = btn.dataset.dir;
       state.keys[dir] = true;
+      tryStartMoveFromInput();
     });
     btn.addEventListener('pointerup', e=> {
       const dir = btn.dataset.dir;
@@ -105,40 +112,10 @@ function toggleMenu(close = false) {
   menu.classList.toggle('hidden', !close ? false : true);
 }
 
-// interaction
-function onAction() {
+// Start a tile-move if player is not already moving
+function tryStartMoveFromInput() {
   const p = state.player;
-  const tx = Math.round(p.x + (p.dir === 'right' ? 1 : p.dir === 'left' ? -1 : 0));
-  const ty = Math.round(p.y + (p.dir === 'down' ? 1 : p.dir === 'up' ? -1 : 0));
-  const tile = getTile(tx, ty);
-  if (tile === 2) {
-    pushMessage('You found a shiny rock!');
-  } else if (tile === 3) {
-    pushMessage('A closed chest. (locked)');
-  } else {
-    pushMessage('There is nothing here.');
-  }
-}
-
-// map helpers
-function getTile(x,y) {
-  if (!state.map) return 0;
-  if (y < 0 || y >= state.map.height || x < 0 || x >= state.map.width) return 0;
-  return state.map.layers[0].data[y * state.map.width + x];
-}
-
-function isWalkable(x,y) {
-  const tile = getTile(x,y);
-  // Treat 1 as ground (walkable), 0 as out-of-bounds/empty, 4 as wall (non-walkable)
-  if (tile === 4) return false;
-  if (tile === 0) return false;
-  return true;
-}
-
-// game loop
-function update(dt) {
-  const p = state.player;
-  // interpret inputs (keyboard arrows + wasd)
+  if (p.moving) return;
   const up = state.keys['arrowup'] || state.keys['w'] || state.keys['up'];
   const down = state.keys['arrowdown'] || state.keys['s'] || state.keys['down'];
   const left = state.keys['arrowleft'] || state.keys['a'] || state.keys['left'];
@@ -146,65 +123,117 @@ function update(dt) {
 
   let dx = 0, dy = 0;
   if (up) { dy = -1; p.dir = 'up'; }
-  if (down) { dy = 1; p.dir = 'down'; }
-  if (left) { dx = -1; p.dir = 'left'; }
-  if (right) { dx = 1; p.dir = 'right'; }
-  // normalize diagonal
-  if (dx !== 0 && dy !== 0) {
-    dx *= Math.SQRT1_2;
-    dy *= Math.SQRT1_2;
-  }
+  else if (down) { dy = 1; p.dir = 'down'; }
+  else if (left) { dx = -1; p.dir = 'left'; }
+  else if (right) { dx = 1; p.dir = 'right'; }
 
-  const move = p.speed * dt;
-  const newX = p.x + dx * move;
-  const newY = p.y + dy * move;
-
-  // Collision: simple tile-based collision using rounded position
-  if (isWalkable(Math.round(newX), Math.round(p.y))) {
-    p.x = newX;
-  }
-  if (isWalkable(Math.round(p.x), Math.round(newY))) {
-    p.y = newY;
+  if (dx !== 0 || dy !== 0) {
+    const nx = wrapCoord(Math.round(p.x) + dx, state.map.width);
+    const ny = wrapCoord(Math.round(p.y) + dy, state.map.height);
+    if (isWalkable(nx, ny)) {
+      p.tx = nx;
+      p.ty = ny;
+      p.moving = true;
+    } else {
+      // facing but blocked
+      pushMessage('Blocked.');
+    }
   }
 }
 
+// map helpers updated for wrapping (toroidal)
+function wrapCoord(v, max) {
+  // ensure positive modulo
+  return ((v % max) + max) % max;
+}
+
+function getTile(x,y) {
+  if (!state.map) return 0;
+  // wrap coordinates to create infinite world
+  const wx = wrapCoord(x, state.map.width);
+  const wy = wrapCoord(y, state.map.height);
+  return state.map.layers[0].data[wy * state.map.width + wx];
+}
+
+function isWalkable(x,y) {
+  const tile = getTile(x,y);
+  if (tile === 4) return false;
+  if (tile === 0) return false;
+  return true;
+}
+
+// update: interpolate towards target tile (grid movement)
+function update(dt) {
+  const p = state.player;
+
+  if (p.moving) {
+    // move toward target tile
+    const dx = p.tx - p.x;
+    const dy = p.ty - p.y;
+    const dist = Math.hypot(dx, dy);
+    const move = p.speed * dt;
+    if (dist <= move) {
+      // snap to target
+      p.x = p.tx;
+      p.y = p.ty;
+      p.moving = false;
+    } else {
+      // normalize and step
+      p.x += (dx / dist) * move;
+      p.y += (dy / dist) * move;
+    }
+  } else {
+    // not moving: allow starting moves via continuous key press (keeps mobile friendly)
+    if (state.keys['up'] || state.keys['w'] || state.keys['arrowup'] ||
+        state.keys['down'] || state.keys['s'] || state.keys['arrowdown'] ||
+        state.keys['left'] || state.keys['a'] || state.keys['arrowleft'] ||
+        state.keys['right'] || state.keys['d'] || state.keys['arrowright']) {
+      tryStartMoveFromInput();
+    }
+  }
+}
+
+// draw: render wrapping tiles for infinite feel and draw subtle grid
 function draw() {
   // clear
   ctx.clearRect(0,0,LOGICAL_W,LOGICAL_H);
 
-  // center camera on player
-  const camX = Math.round(state.player.x * TILE - LOGICAL_W/2 + TILE/2);
-  const camY = Math.round(state.player.y * TILE - LOGICAL_H/2 + TILE/2);
+  // center camera on player (in world pixels)
+  const worldPxX = ppx = state.player.x * TILE;
+  const worldPxY = ppy = state.player.y * TILE;
+  const camX = Math.round(worldPxX - LOGICAL_W/2 + TILE/2);
+  const camY = Math.round(worldPxY - LOGICAL_H/2 + TILE/2);
 
-  // draw tiles
-  const map = state.map;
-  if (map && state.tilesImage) {
-    const cols = map.width;
-    const rows = map.height;
-    for (let y=0;y<rows;y++){
-      for (let x=0;x<cols;x++){
-        const t = map.layers[0].data[y*cols + x];
-        // draw only tiles visible in viewport for perf
-        const sx = x * TILE - camX;
-        const sy = y * TILE - camY;
+  // draw tiles: iterate viewport area in tile coords and sample wrapped tiles
+  if (state.map && state.tilesImage) {
+    const cols = state.map.width;
+    const rows = state.map.height;
+    // compute tile range that covers viewport with padding
+    const startX = Math.floor((camX) / TILE) - 1;
+    const startY = Math.floor((camY) / TILE) - 1;
+    const endX = Math.ceil((camX + LOGICAL_W) / TILE) + 1;
+    const endY = Math.ceil((camY + LOGICAL_H) / TILE) + 1;
+
+    for (let ty = startY; ty < endY; ty++) {
+      for (let tx = startX; tx < endX; tx++) {
+        const wrappedX = wrapCoord(tx, cols);
+        const wrappedY = wrapCoord(ty, rows);
+        const t = state.map.layers[0].data[wrappedY*cols + wrappedX];
+
+        const sx = tx * TILE - camX;
+        const sy = ty * TILE - camY;
+
+        // skip if completely offscreen
         if (sx + TILE < 0 || sy + TILE < 0 || sx > LOGICAL_W || sy > LOGICAL_H) continue;
 
-        // simple tileset layout: tile id -> position in tiles.png
-        // We'll map ids:
-        // 1: grass, 2: item-ground (grass), 3: chest, 4: wall
-        let tx = 0, ty = 0;
-        if (t === 1) { tx = 0; ty = 0; } // grass
-        else if (t === 2) { tx = 1; ty = 0; } // grass with item
-        else if (t === 3) { tx = 2; ty = 0; } // chest
-        else if (t === 4) { tx = 3; ty = 0; } // wall
-        else { tx = 0; ty = 0; }
-
-        ctx.drawImage(state.tilesImage, tx * TILE, ty * TILE, TILE, TILE, Math.round(sx), Math.round(sy), TILE, TILE);
+        let sxTile = 0;
+        if (t === 1) { sxTile = 0; } else if (t === 2) { sxTile = 1; } else if (t === 3) { sxTile = 2; } else if (t === 4) { sxTile = 3; }
+        ctx.drawImage(state.tilesImage, sxTile * TILE, 0, TILE, TILE, Math.round(sx), Math.round(sy), TILE, TILE);
       }
     }
   }
 
-  // draw player
+  // draw player (unchanged rendering, but use current p position)
   const p = state.player;
   if (state.playerSprite) {
     // player sprite sheet layout: row = direction (down, left, right, up), col = frame (0..2)
@@ -219,6 +248,18 @@ function draw() {
     // fallback: simple rectangle
     ctx.fillStyle = '#b0533a';
     ctx.fillRect(Math.round(p.x*TILE - camX - 6), Math.round(p.y*TILE - camY - 10), 12, 14);
+  }
+
+  // subtle grid overlay to emphasize gameplay grid
+  ctx.strokeStyle = 'rgba(0,0,0,0.04)';
+  ctx.lineWidth = 1;
+  const firstGridX = - (camX % TILE);
+  const firstGridY = - (camY % TILE);
+  for (let gx = firstGridX; gx < LOGICAL_W; gx += TILE) {
+    ctx.beginPath(); ctx.moveTo(Math.round(gx)+0.5,0); ctx.lineTo(Math.round(gx)+0.5, LOGICAL_H); ctx.stroke();
+  }
+  for (let gy = firstGridY; gy < LOGICAL_H; gy += TILE) {
+    ctx.beginPath(); ctx.moveTo(0, Math.round(gy)+0.5); ctx.lineTo(LOGICAL_W, Math.round(gy)+0.5); ctx.stroke();
   }
 
   // debug overlay (minimal)
@@ -249,5 +290,3 @@ async function init() {
 }
 
 init();
-/* ...existing code... */
-
