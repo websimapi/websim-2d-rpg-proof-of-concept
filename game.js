@@ -230,6 +230,34 @@ function draw() {
   const camX = Math.round(worldPxX - LOGICAL_W/2 + TILE/2);
   const camY = Math.round(worldPxY - LOGICAL_H/2 + TILE/2);
 
+  // draw visible tiles grid and coordinates (wrapped map coords)
+  const firstTileX = Math.floor(camX / TILE);
+  const firstTileY = Math.floor(camY / TILE);
+  const tilesX = Math.ceil(LOGICAL_W / TILE) + 1;
+  const tilesY = Math.ceil(LOGICAL_H / TILE) + 1;
+  ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+  ctx.lineWidth = 1;
+  ctx.font = '8px "Noto Sans", sans-serif';
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  for (let ty = 0; ty < tilesY; ty++) {
+    for (let tx = 0; tx < tilesX; tx++) {
+      const tileWorldX = (firstTileX + tx) * TILE;
+      const tileWorldY = (firstTileY + ty) * TILE;
+      const screenX = Math.round(tileWorldX - camX);
+      const screenY = Math.round(tileWorldY - camY);
+      // background slight fill for tile
+      ctx.fillStyle = 'rgba(255,255,255,0.02)';
+      ctx.fillRect(screenX, screenY, TILE, TILE);
+      // tile border
+      ctx.strokeRect(screenX + 0.5, screenY + 0.5, TILE - 1, TILE - 1);
+      // wrapped coords
+      const mapX = wrapCoord(firstTileX + tx, state.map.width);
+      const mapY = wrapCoord(firstTileY + ty, state.map.height);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillText(`${mapX},${mapY}`, screenX + 4, screenY + TILE - 6);
+    }
+  }
+
   // draw a single blue circle at player's screen position
   const screenX = Math.round(p.x * TILE - camX + TILE/2);
   const screenY = Math.round(p.y * TILE - camY + TILE/2);
