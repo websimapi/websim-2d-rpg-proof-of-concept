@@ -51,6 +51,7 @@ let grassTexture;
 let tileGroup; // new: group of visible tile meshes
 let renderRadius = 10; // new: how many tiles from player to render (visible radius)
 let lastTileCenter = {x: null, y: null}; // new: track last integer player tile to avoid unnecessary updates
+let mats = {}; // <-- add shared materials container so updateTiles can reference mats
 
 // Load assets (map + images) and then setup three scene
 async function loadAssets() {
@@ -136,7 +137,7 @@ function setupScene() {
   const matItem = new THREE.MeshLambertMaterial({ color: 0xffee88, map: grassTexture, transparent: true, opacity: 0.98 });
   const matChest = new THREE.MeshLambertMaterial({ color: 0xc48a3f });
   const matWall  = new THREE.MeshLambertMaterial({ color: 0x8b8b8b });
-  const mats = {1: matGrass, 2: matItem, 3: matChest, 4: matWall};
+  mats = {1: matGrass, 2: matItem, 3: matChest, 4: matWall};
   for (let jy = -renderRadius; jy <= renderRadius; jy++) {
     for (let ix = -renderRadius; ix <= renderRadius; ix++) {
       const m = new THREE.Mesh(tileGeom, matGrass);
