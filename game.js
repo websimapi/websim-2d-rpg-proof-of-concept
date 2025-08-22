@@ -45,6 +45,9 @@ const state = {
 let renderer, scene, camera;
 let groundMesh, playerSprite;
 let grassTexture;
+let tileGroup; // new: group of visible tile meshes
+let renderRadius = 10; // new: how many tiles from player to render (visible radius)
+let lastTileCenter = {x: null, y: null}; // new: track last integer player tile to avoid unnecessary updates
 
 // Load assets (map + images) and then setup three scene
 async function loadAssets() {
@@ -121,6 +124,21 @@ function setupScene() {
   grid.material.transparent = true;
   scene.add(grid);
 
+  // --- replace large static ground with an infinite-ish tiled group: create small tile meshes around player ---
+  tileGroup = new THREE.Group();
+  const tileGeom = new THREE.PlaneGeometry(TILE, TILE);
+  // use shallow material that shares the grass texture (nearest filter already set)
+  const tileMat = new THREE.MeshLambertMaterial({ map: grassTexture });
+  for (let jy = -renderRadius; jy <= renderRadius; jy++) {
+    for (let ix = -renderRadius; ix <= renderRadius; ix++) {
+      const m = new THREE.Mesh(tileGeom, tileMat);
+      m.rotation.x = -Math.PI / 2;
+      m.receiveShadow = false;
+      tileGroup.add(m);
+    }
+  }
+  scene.add(tileGroup);
+
   // player: create a billboarded sprite using the player image drawn to a canvas texture
   const pcanvas = document.createElement('canvas');
   pcanvas.width = state.player.w;
@@ -139,6 +157,7 @@ function setupScene() {
 
   // place initial positions
   updatePlayerWorldPosition(true);
+  updateTiles(); // new: populate tileGroup positions initially
 }
 
 // Input handling: start grid move when a direction pressed (discrete)
@@ -309,6 +328,15 @@ function updatePlayerWorldPosition(forceCenter=false) {
   const worldZ = (state.player.y - state.map.height / 2) * TILE;
   playerSprite.position.set(worldX, TILE * 0.5, worldZ);
 
+  // update tiles only when player crosses an integer tile (or forced)
+  const centerTileX = Math.round(state.player.x);
+  const centerTileY = Math.round(state.player.y);
+  if (forceCenter || centerTileX !== lastTileCenter.x || centerTileY !== lastTileCenter.y) {
+    lastTileCenter.x = centerTileX;
+    lastTileCenter.y = centerTileY;
+    updateTiles();
+  }
+
   // make sprite face camera by default (Three Sprites are camera-facing)
   // Position camera to follow player smoothly
   const camTargetX = worldX;
@@ -399,6 +427,30 @@ function pushMessage(text) {
   if (state.messages.length > 4) state.messages.pop();
   UI.showMessage(text);
   document.getElementById('hp-val').textContent = state.player.hp;
+}
+
+// new: reposition tileGroup children to form a grid centered on the player's integer tile.
+// This gives a toroidal/wrapping effect by computing wrapped map coords and translating tiles accordingly.
+function updateTiles() {
+  if (!tileGroup || !state.map) return;
+  const centerX = Math.round(state.player.x);
+  const centerY = Math.round(state.player.y);
+  let i = 0;
+  for (let dy = -renderRadius; dy <= renderRadius; dy++) {
+    for (let dx = -renderRadius; dx <= renderRadius; dx++) {
+      const mapX = wrapCoord(centerX + dx, state.map.width);
+      const mapY = wrapCoord(centerY + dy, state.map.height);
+      const mesh = tileGroup.children[i++];
+      // world position accounts for map origin in center
+      const wx = (centerX + dx - state.map.width / 2) * TILE;
+      const wz = (centerY + dy - state.map.height / 2) * TILE;
+      mesh.position.set(wx, 0, wz);
+      // optional: slight Y offset for visual layering if needed
+      mesh.position.y = 0;
+      // If different tile types need visual changes later, we can switch materials or visibility here
+      mesh.visible = true;
+    }
+  }
 }
 
 /* Main loop */
