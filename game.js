@@ -129,16 +129,20 @@ function setupScene() {
 
   // --- replace large static ground with an infinite-ish tiled group: create small tile meshes around player ---
   tileGroup = new THREE.Group();
-  const tileGeom = new THREE.PlaneGeometry(TILE, TILE);
-  // use shallow material that shares the grass texture (nearest filter already set)
-  const tileMat = new THREE.MeshLambertMaterial({ map: grassTexture });
+  // create small box tiles so the world reads with depth (voxel / tabletop tiles)
+  const tileGeom = new THREE.BoxGeometry(TILE * 0.98, 4, TILE * 0.98);
+  // materials for different map tile types: grass (1), sparkle/item (2), chest (3), wall (4)
+  const matGrass = new THREE.MeshLambertMaterial({ map: grassTexture });
+  const matItem = new THREE.MeshLambertMaterial({ color: 0xffee88, map: grassTexture, transparent: true, opacity: 0.98 });
+  const matChest = new THREE.MeshLambertMaterial({ color: 0xc48a3f });
+  const matWall  = new THREE.MeshLambertMaterial({ color: 0x8b8b8b });
+  const mats = {1: matGrass, 2: matItem, 3: matChest, 4: matWall};
   for (let jy = -renderRadius; jy <= renderRadius; jy++) {
     for (let ix = -renderRadius; ix <= renderRadius; ix++) {
-      const m = new THREE.Mesh(tileGeom, tileMat);
-      m.rotation.x = -Math.PI / 2;
+      const m = new THREE.Mesh(tileGeom, matGrass);
+      // rotate so top faces up and center lines up with world units
+      m.position.y = 2; // half the box height so top sits at y=4
       m.receiveShadow = false;
-      // give tiles a tiny offset above the big ground to avoid z-fighting
-      m.position.y = 0.08;
       tileGroup.add(m);
     }
   }
@@ -461,13 +465,21 @@ function updateTiles() {
       const mapX = wrapCoord(centerX + dx, state.map.width);
       const mapY = wrapCoord(centerY + dy, state.map.height);
       const mesh = tileGroup.children[i++];
-      // world position accounts for map origin in center
+      // world position accounts for map origin in center (1 tile -> TILE units)
       const wx = (centerX + dx - state.map.width / 2) * TILE;
       const wz = (centerY + dy - state.map.height / 2) * TILE;
-      mesh.position.set(wx, 0, wz);
-      // tiny offset above the large ground to avoid z-fighting
-      mesh.position.y = 0.08;
-      // If different tile types need visual changes later, we can switch materials or visibility here
+      mesh.position.set(wx, 2, wz); // y=2 so top surface is visible (box height = 4)
+      // pick material based on tile type (map layer values)
+      const tileVal = getTile(mapX, mapY) || 1;
+      // choose matching material; walls get taller visual
+      if (tileVal === 4) {
+        // increase wall height by scaling Y
+        mesh.scale.y = 2.5;
+        mesh.material = mats[4];
+      } else {
+        mesh.scale.y = 1;
+        mesh.material = mats[tileVal] || mats[1];
+      }
       mesh.visible = true;
     }
   }
