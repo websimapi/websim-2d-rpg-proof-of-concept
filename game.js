@@ -271,13 +271,22 @@ function draw() {
     }
   }
 
-  // draw a single blue circle at player's screen position
-  const screenX = Math.round(p.x * TILE - camX + TILE/2);
-  const screenY = Math.round(p.y * TILE - camY + TILE/2);
-  ctx.fillStyle = '#2b7bff';
-  ctx.beginPath();
-  ctx.arc(screenX, screenY, Math.max(4, TILE/2 - 2), 0, Math.PI*2);
-  ctx.fill();
+  // draw player blob sprite (single-frame image)
+  if (state.playerSprite) {
+    const drawW = p.w; // use sprite native size (12)
+    const drawH = p.h; // use sprite native size (14)
+    // Scale up slightly for readability at logical resolution (2x)
+    const scaleUp = 2;
+    ctx.drawImage(state.playerSprite, screenX - (drawW*scaleUp)/2, screenY - (drawH*scaleUp)/2, drawW*scaleUp, drawH*scaleUp);
+  } else {
+    // draw a single blue circle at player's screen position
+    const screenX = Math.round(p.x * TILE - camX + TILE/2);
+    const screenY = Math.round(p.y * TILE - camY + TILE/2);
+    ctx.fillStyle = '#2b7bff';
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, Math.max(4, TILE/2 - 2), 0, Math.PI*2);
+    ctx.fill();
+  }
 
   // minimal debug overlay
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
