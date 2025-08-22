@@ -223,71 +223,22 @@ function draw() {
   // clear
   ctx.clearRect(0,0,LOGICAL_W,LOGICAL_H);
 
-  // center camera on player (in world pixels)
+  // compute camera but we only need player's screen position
   const p = state.player;
   const worldPxX = p.x * TILE;
   const worldPxY = p.y * TILE;
   const camX = Math.round(worldPxX - LOGICAL_W/2 + TILE/2);
   const camY = Math.round(worldPxY - LOGICAL_H/2 + TILE/2);
 
-  // draw tiles: iterate viewport area in tile coords and sample wrapped tiles
-  if (state.map && state.tilesImage) {
-    const cols = state.map.width;
-    const rows = state.map.height;
-    // compute tile range that covers viewport with padding
-    const startX = Math.floor((camX) / TILE) - 1;
-    const startY = Math.floor((camY) / TILE) - 1;
-    const endX = Math.ceil((camX + LOGICAL_W) / TILE) + 1;
-    const endY = Math.ceil((camY + LOGICAL_H) / TILE) + 1;
+  // draw a single blue circle at player's screen position
+  const screenX = Math.round(p.x * TILE - camX + TILE/2);
+  const screenY = Math.round(p.y * TILE - camY + TILE/2);
+  ctx.fillStyle = '#2b7bff';
+  ctx.beginPath();
+  ctx.arc(screenX, screenY, Math.max(4, TILE/2 - 2), 0, Math.PI*2);
+  ctx.fill();
 
-    for (let ty = startY; ty < endY; ty++) {
-      for (let tx = startX; tx < endX; tx++) {
-        const wrappedX = wrapCoord(tx, cols);
-        const wrappedY = wrapCoord(ty, rows);
-        const t = state.map.layers[0].data[wrappedY*cols + wrappedX];
-
-        const sx = tx * TILE - camX;
-        const sy = ty * TILE - camY;
-
-        // skip if completely offscreen
-        if (sx + TILE < 0 || sy + TILE < 0 || sx > LOGICAL_W || sy > LOGICAL_H) continue;
-
-        let sxTile = 0;
-        if (t === 1) { sxTile = 0; } else if (t === 2) { sxTile = 1; } else if (t === 3) { sxTile = 2; } else if (t === 4) { sxTile = 3; }
-        ctx.drawImage(state.tilesImage, sxTile * TILE, 0, TILE, TILE, Math.round(sx), Math.round(sy), TILE, TILE);
-      }
-    }
-  }
-
-  // draw player (unchanged rendering, but use current p position)
-  if (state.playerSprite) {
-    // player sprite sheet layout: row = direction (down, left, right, up), col = frame (0..2)
-    const dirIndex = p.dir === 'down' ? 0 : p.dir === 'left' ? 1 : p.dir === 'right' ? 2 : 3;
-    const frame = Math.floor(Date.now()/200) % 3;
-    const sx = frame * p.w;
-    const sy = dirIndex * p.h;
-    const drawX = Math.round(p.x * TILE - camX - p.w/2 + TILE/2);
-    const drawY = Math.round(p.y * TILE - camY - p.h + TILE);
-    ctx.drawImage(state.playerSprite, sx, sy, p.w, p.h, drawX, drawY, p.w, p.h);
-  } else {
-    // fallback: simple rectangle
-    ctx.fillStyle = '#b0533a';
-    ctx.fillRect(Math.round(p.x*TILE - camX - 6), Math.round(p.y*TILE - camY - 10), 12, 14);
-  }
-
-  // subtle grid overlay to emphasize gameplay grid
-  ctx.strokeStyle = 'rgba(0,0,0,0.04)';
-  ctx.lineWidth = 1;
-  const firstGridX = - (camX % TILE);
-  const firstGridY = - (camY % TILE);
-  for (let gx = firstGridX; gx < LOGICAL_W; gx += TILE) {
-    ctx.beginPath(); ctx.moveTo(Math.round(gx)+0.5,0); ctx.lineTo(Math.round(gx)+0.5, LOGICAL_H); ctx.stroke();
-  }
-  for (let gy = firstGridY; gy < LOGICAL_H; gy += TILE) {
-    ctx.beginPath(); ctx.moveTo(0, Math.round(gy)+0.5); ctx.lineTo(LOGICAL_W, Math.round(gy)+0.5); ctx.stroke();
-  }
-
-  // debug overlay (minimal)
+  // minimal debug overlay
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.font = '8px sans-serif';
   ctx.fillText(`x:${p.x.toFixed(2)} y:${p.y.toFixed(2)}`, 6, LOGICAL_H - 6);
