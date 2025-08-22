@@ -97,10 +97,9 @@ function setupScene() {
     frustumSize / 2, frustumSize / -2,
     0.1, 1000
   );
-  camera.position.set(0, 200, 200); // above and back
+  camera.position.set(0, 400, 0);
+  camera.up.set(0, 0, -1); // keep "north" oriented up on screen
   camera.lookAt(0, 0, 0);
-  // slight angle to create pseudo-3D tabletop; rotate down slightly
-  camera.rotation.order = "YXZ";
 
   // lighting (subtle)
   const amb = new THREE.AmbientLight(0xffffff, 0.8);
@@ -117,12 +116,6 @@ function setupScene() {
   groundMesh = new THREE.Mesh(geom, mat);
   groundMesh.rotation.x = -Math.PI / 2; // lay flat
   scene.add(groundMesh);
-
-  // grid lines overlay on the plane using LineSegments for clarity
-  const grid = new THREE.GridHelper(planeSize, Math.max(state.map.width, state.map.height), 0x000000, 0x000000);
-  grid.material.opacity = 0.06;
-  grid.material.transparent = true;
-  scene.add(grid);
 
   // --- replace large static ground with an infinite-ish tiled group: create small tile meshes around player ---
   tileGroup = new THREE.Group();
@@ -341,9 +334,9 @@ function updatePlayerWorldPosition(forceCenter=false) {
   // Position camera to follow player smoothly
   const camTargetX = worldX;
   const camTargetZ = worldZ;
-  // camera sits offset above and behind the player
+  // Keep the camera height fixed and follow X/Z smoothly for a stable top-down view
   camera.position.x += (camTargetX - camera.position.x) * 0.18;
-  camera.position.z += (camTargetZ + 200 - camera.position.z) * 0.08;
+  camera.position.z += (camTargetZ - camera.position.z) * 0.18;
   camera.lookAt(camTargetX, 0, camTargetZ);
 }
 
