@@ -224,8 +224,9 @@ function draw() {
   ctx.clearRect(0,0,LOGICAL_W,LOGICAL_H);
 
   // center camera on player (in world pixels)
-  const worldPxX = ppx = state.player.x * TILE;
-  const worldPxY = ppy = state.player.y * TILE;
+  const p = state.player;
+  const worldPxX = p.x * TILE;
+  const worldPxY = p.y * TILE;
   const camX = Math.round(worldPxX - LOGICAL_W/2 + TILE/2);
   const camY = Math.round(worldPxY - LOGICAL_H/2 + TILE/2);
 
@@ -259,7 +260,6 @@ function draw() {
   }
 
   // draw player (unchanged rendering, but use current p position)
-  const p = state.player;
   if (state.playerSprite) {
     // player sprite sheet layout: row = direction (down, left, right, up), col = frame (0..2)
     const dirIndex = p.dir === 'down' ? 0 : p.dir === 'left' ? 1 : p.dir === 'right' ? 2 : 3;
@@ -290,7 +290,7 @@ function draw() {
   // debug overlay (minimal)
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.font = '8px sans-serif';
-  ctx.fillText(`x:${state.player.x.toFixed(2)} y:${state.player.y.toFixed(2)}`, 6, LOGICAL_H - 6);
+  ctx.fillText(`x:${p.x.toFixed(2)} y:${p.y.toFixed(2)}`, 6, LOGICAL_H - 6);
 }
 
 function loop(ts) {
