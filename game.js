@@ -141,6 +141,31 @@ function tryStartMoveFromInput() {
   }
 }
 
+/* Add: simple interact handler used by the action button */
+function onAction() {
+  const p = state.player;
+  // direction vector for tile in front
+  let dx = 0, dy = 0;
+  if (p.dir === 'up') dy = -1;
+  else if (p.dir === 'down') dy = 1;
+  else if (p.dir === 'left') dx = -1;
+  else if (p.dir === 'right') dx = 1;
+
+  const tx = wrapCoord(Math.round(p.x) + dx, state.map.width);
+  const ty = wrapCoord(Math.round(p.y) + dy, state.map.height);
+  const tile = getTile(tx, ty);
+
+  if (tile === 2) {
+    pushMessage('You see a small sparkle on the ground.');
+  } else if (tile === 3) {
+    pushMessage('There is a chest here. It\'s empty (demo).');
+  } else if (tile === 4) {
+    pushMessage('A wall blocks the way.');
+  } else {
+    pushMessage('Nothing of interest.');
+  }
+}
+
 // map helpers updated for wrapping (toroidal)
 function wrapCoord(v, max) {
   // ensure positive modulo
