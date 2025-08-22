@@ -1,5 +1,6 @@
 /* ...existing code... */
 import { UI } from './ui.js';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js';
 
 /*
   Simple 2D RPG proof of concept:
@@ -10,10 +11,9 @@ import { UI } from './ui.js';
   - Mobile-friendly dpad controls + keyboard
 */
 
+// bind existing canvas for THREE renderer
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-
-// Logical resolution (keeps pixel feel)
+const TILE = 16;
 const LOGICAL_W = 320;
 const LOGICAL_H = 180;
 canvas.width = LOGICAL_W;
@@ -22,15 +22,11 @@ canvas.height = LOGICAL_H;
 // scale CSS canvas to be responsive (handled by CSS width:100%)
 let scale = 1;
 
-const TILE = 16;
-const VIEWPORT_TILES_X = LOGICAL_W / TILE; // 20
-const VIEWPORT_TILES_Y = LOGICAL_H / TILE; // 11.25 -> we'll floor when drawing
-
-// game state
+// game state (keeps many original fields for compatibility)
 const state = {
   map: null,
   tilesImage: null,
-  playerSprite: null,
+  playerSpriteImage: null,
   player: {
     x: 5, y: 5, // tile coordinates (float for smooth)
     tx: 5, ty: 5, // target tile (for grid movement)
@@ -45,13 +41,30 @@ const state = {
   messages: []
 };
 
-// load assets
+// THREE.js essentials
+let renderer, scene, camera;
+let groundMesh, playerSprite;
+let grassTexture;
+
+// Load assets (map + images) and then setup three scene
 async function loadAssets() {
   const mapResp = await fetch('map.json');
   state.map = await mapResp.json();
 
+  // load raw images
   state.tilesImage = await loadImage('assets/tiles.png');
-  state.playerSprite = await loadImage('assets/player.png');
+  state.playerSpriteImage = await loadImage('assets/player.png');
+
+  // create cropped grass texture from tiles.png (first tile)
+  const tileCanvas = document.createElement('canvas');
+  tileCanvas.width = 16; tileCanvas.height = 16;
+  const tctx = tileCanvas.getContext('2d');
+  tctx.drawImage(state.tilesImage, 0, 0, 16, 16, 0, 0, 16, 16);
+  grassTexture = new THREE.CanvasTexture(tileCanvas);
+  grassTexture.magFilter = THREE.NearestFilter;
+  grassTexture.minFilter = THREE.NearestMipMapNearestFilter;
+  grassTexture.wrapS = THREE.RepeatWrapping;
+  grassTexture.wrapT = THREE.RepeatWrapping;
 }
 
 function loadImage(src) {
@@ -63,11 +76,69 @@ function loadImage(src) {
   });
 }
 
-function pushMessage(text) {
-  state.messages.unshift({text, t: Date.now()});
-  if (state.messages.length > 4) state.messages.pop();
-  UI.showMessage(text);
-  document.getElementById('hp-val').textContent = state.player.hp;
+/* Initialize THREE scene */
+function setupScene() {
+  // renderer
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
+  renderer.setPixelRatio(1);
+  renderer.setSize(LOGICAL_W, LOGICAL_H, false);
+  renderer.setClearColor(0xdce9f8, 1);
+
+  scene = new THREE.Scene();
+
+  // camera: orthographic to keep crisp pixel look, but tilted for tabletop feel
+  const aspect = LOGICAL_W / LOGICAL_H;
+  const frustumSize = 200; // arbitrary world units to map to tiles comfortably
+  camera = new THREE.OrthographicCamera(
+    frustumSize * aspect / -2, frustumSize * aspect / 2,
+    frustumSize / 2, frustumSize / -2,
+    0.1, 1000
+  );
+  camera.position.set(0, 200, 200); // above and back
+  camera.lookAt(0, 0, 0);
+  // slight angle to create pseudo-3D tabletop; rotate down slightly
+  camera.rotation.order = "YXZ";
+
+  // lighting (subtle)
+  const amb = new THREE.AmbientLight(0xffffff, 0.8);
+  scene.add(amb);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+  dir.position.set(100, 200, 100);
+  scene.add(dir);
+
+  // ground: create a plane textured with repeated grass tile.
+  const planeSize = Math.max(state.map.width, state.map.height) * TILE * 0.75;
+  const geom = new THREE.PlaneGeometry(planeSize, planeSize);
+  grassTexture.repeat.set(planeSize / TILE, planeSize / TILE);
+  const mat = new THREE.MeshLambertMaterial({ map: grassTexture });
+  groundMesh = new THREE.Mesh(geom, mat);
+  groundMesh.rotation.x = -Math.PI / 2; // lay flat
+  scene.add(groundMesh);
+
+  // grid lines overlay on the plane using LineSegments for clarity
+  const grid = new THREE.GridHelper(planeSize, Math.max(state.map.width, state.map.height), 0x000000, 0x000000);
+  grid.material.opacity = 0.06;
+  grid.material.transparent = true;
+  scene.add(grid);
+
+  // player: create a billboarded sprite using the player image drawn to a canvas texture
+  const pcanvas = document.createElement('canvas');
+  pcanvas.width = state.player.w;
+  pcanvas.height = state.player.h;
+  const pctx = pcanvas.getContext('2d');
+  pctx.drawImage(state.playerSpriteImage, 0, 0, state.player.w, state.player.h);
+  const playerTex = new THREE.CanvasTexture(pcanvas);
+  playerTex.magFilter = THREE.NearestFilter;
+  playerTex.minFilter = THREE.NearestFilter;
+  const spriteMat = new THREE.SpriteMaterial({ map: playerTex, transparent: true });
+  playerSprite = new THREE.Sprite(spriteMat);
+  // scale sprite to sit nicely in a tile: world unit mapping: TILE px -> 1 unit
+  const spriteScale = TILE * 0.9;
+  playerSprite.scale.set(spriteScale, spriteScale * (state.player.h / state.player.w), 1);
+  scene.add(playerSprite);
+
+  // place initial positions
+  updatePlayerWorldPosition(true);
 }
 
 // Input handling: start grid move when a direction pressed (discrete)
@@ -200,7 +271,6 @@ function isWalkable(x,y) {
 // update: interpolate towards target tile (grid movement)
 function update(dt) {
   const p = state.player;
-
   if (p.moving) {
     // move toward target tile using shortest wrapped path
     const dx = shortestDelta(p.x, p.tx, state.map.width);
@@ -220,6 +290,7 @@ function update(dt) {
       p.x = wrapCoord(p.x, state.map.width);
       p.y = wrapCoord(p.y, state.map.height);
     }
+    updatePlayerWorldPosition();
   } else {
     // not moving: allow starting moves via continuous key press (keeps mobile friendly)
     if (state.keys['up'] || state.keys['w'] || state.keys['arrowup'] ||
@@ -229,6 +300,28 @@ function update(dt) {
       tryStartMoveFromInput();
     }
   }
+}
+
+/* Place player sprite in world coordinates and nudge camera to follow (wrap aware) */
+function updatePlayerWorldPosition(forceCenter=false) {
+  // Map tile coordinates to world units (1 tile -> TILE units)
+  const worldX = (state.player.x - state.map.width / 2) * TILE;
+  const worldZ = (state.player.y - state.map.height / 2) * TILE;
+  playerSprite.position.set(worldX, TILE * 0.5, worldZ);
+
+  // make sprite face camera by default (Three Sprites are camera-facing)
+  // Position camera to follow player smoothly
+  const camTargetX = worldX;
+  const camTargetZ = worldZ;
+  // camera sits offset above and behind the player
+  camera.position.x += (camTargetX - camera.position.x) * 0.18;
+  camera.position.z += (camTargetZ + 200 - camera.position.z) * 0.08;
+  camera.lookAt(camTargetX, 0, camTargetZ);
+}
+
+/* Render function */
+function render() {
+  renderer.render(scene, camera);
 }
 
 // draw: render wrapping tiles for infinite feel and draw subtle grid
@@ -276,7 +369,7 @@ function draw() {
   const playerScreenY = Math.round(p.y * TILE - camY + TILE/2);
 
   // draw player blob sprite (single-frame image)
-  if (state.playerSprite) {
+  if (state.playerSpriteImage) {
     // native sprite size
     const nativeW = p.w; // 12
     const nativeH = p.h; // 14
@@ -286,7 +379,7 @@ function draw() {
     const scaleFit = maxSize / Math.max(nativeW, nativeH);
     const drawW = Math.round(nativeW * scaleFit);
     const drawH = Math.round(nativeH * scaleFit);
-    ctx.drawImage(state.playerSprite, playerScreenX - drawW / 2, playerScreenY - drawH / 2, drawW, drawH);
+    ctx.drawImage(state.playerSpriteImage, playerScreenX - drawW / 2, playerScreenY - drawH / 2, drawW, drawH);
   } else {
     // draw a single blue circle at player's screen position
     ctx.fillStyle = '#2b7bff';
@@ -301,13 +394,21 @@ function draw() {
   ctx.fillText(`x:${p.x.toFixed(2)} y:${p.y.toFixed(2)}`, 6, LOGICAL_H - 6);
 }
 
+function pushMessage(text) {
+  state.messages.unshift({text, t: Date.now()});
+  if (state.messages.length > 4) state.messages.pop();
+  UI.showMessage(text);
+  document.getElementById('hp-val').textContent = state.player.hp;
+}
+
+/* Main loop */
 function loop(ts) {
   if (!state.lastTime) state.lastTime = ts;
   const dt = Math.min(0.05, (ts - state.lastTime) / 1000); // clamp dt
   state.lastTime = ts;
 
   update(dt);
-  draw();
+  render();
 
   requestAnimationFrame(loop);
 }
@@ -315,6 +416,7 @@ function loop(ts) {
 // init
 async function init() {
   await loadAssets();
+  setupScene();
   setupInput();
   UI.init(state);
 
