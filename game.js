@@ -84,12 +84,17 @@ function loadImage(src) {
 
 /* Initialize THREE scene */
 function setupScene() {
-  // renderer
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
-  renderer.setPixelRatio(1);
-  renderer.setSize(LOGICAL_W, LOGICAL_H, false);
-  renderer.setClearColor(0xdce9f8, 1);
-
+  // renderer (try WebGL, otherwise fall back to 2D canvas rendering)
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
+    renderer.setPixelRatio(1);
+    renderer.setSize(LOGICAL_W, LOGICAL_H, false);
+    renderer.setClearColor(0xdce9f8, 1);
+  } catch (err) {
+    console.warn('WebGL unavailable, falling back to 2D canvas rendering.', err);
+    renderer = null;
+  }
+ 
   scene = new THREE.Scene();
 
   // camera: orthographic to keep crisp pixel look, but tilted for tabletop feel
@@ -359,7 +364,12 @@ function updatePlayerWorldPosition(forceCenter=false) {
 
 /* Render function */
 function render() {
-  renderer.render(scene, camera);
+  if (renderer) {
+    renderer.render(scene, camera);
+  } else {
+    // fallback: draw using existing 2D canvas draw() function
+    draw();
+  }
 }
 
 // draw: render wrapping tiles for infinite feel and draw subtle grid
@@ -470,6 +480,7 @@ function loop(ts) {
   state.lastTime = ts;
 
   update(dt);
+  // if using WebGL renderer render 3D scene; otherwise draw 2D canvas + overlay
   render();
 
   requestAnimationFrame(loop);
