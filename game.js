@@ -19,6 +19,9 @@ const LOGICAL_H = 180;
 canvas.width = LOGICAL_W;
 canvas.height = LOGICAL_H;
 
+// Add a 2D context reference used by legacy draw/debug (prevents ctx undefined errors)
+const ctx = canvas.getContext('2d');
+
 // scale CSS canvas to be responsive (handled by CSS width:100%)
 let scale = 1;
 
@@ -115,6 +118,8 @@ function setupScene() {
   const mat = new THREE.MeshLambertMaterial({ map: grassTexture });
   groundMesh = new THREE.Mesh(geom, mat);
   groundMesh.rotation.x = -Math.PI / 2; // lay flat
+  // push the large ground slightly down to avoid z-fighting with tileGroup
+  groundMesh.position.y = -0.12;
   scene.add(groundMesh);
 
   // --- replace large static ground with an infinite-ish tiled group: create small tile meshes around player ---
@@ -127,10 +132,21 @@ function setupScene() {
       const m = new THREE.Mesh(tileGeom, tileMat);
       m.rotation.x = -Math.PI / 2;
       m.receiveShadow = false;
+      // give tiles a tiny offset above the big ground to avoid z-fighting
+      m.position.y = 0.08;
       tileGroup.add(m);
     }
   }
   scene.add(tileGroup);
+
+  // add a grid helper for clear 3D grid visualization
+  const gridSize = (renderRadius * 2 + 1) * TILE;
+  const grid = new THREE.GridHelper(gridSize, (renderRadius * 2 + 1), 0x222222, 0x353535);
+  grid.rotation.x = -Math.PI / 2;
+  grid.position.y = 0.09; // sit just above tiles for visibility
+  grid.material.transparent = true;
+  grid.material.opacity = 0.45;
+  scene.add(grid);
 
   // player: create a billboarded sprite using the player image drawn to a canvas texture
   const pcanvas = document.createElement('canvas');
@@ -319,7 +335,8 @@ function updatePlayerWorldPosition(forceCenter=false) {
   // Map tile coordinates to world units (1 tile -> TILE units)
   const worldX = (state.player.x - state.map.width / 2) * TILE;
   const worldZ = (state.player.y - state.map.height / 2) * TILE;
-  playerSprite.position.set(worldX, TILE * 0.5, worldZ);
+  // raise sprite a bit above tiles so it renders cleanly
+  playerSprite.position.set(worldX, TILE * 0.6, worldZ);
 
   // update tiles only when player crosses an integer tile (or forced)
   const centerTileX = Math.round(state.player.x);
@@ -438,8 +455,8 @@ function updateTiles() {
       const wx = (centerX + dx - state.map.width / 2) * TILE;
       const wz = (centerY + dy - state.map.height / 2) * TILE;
       mesh.position.set(wx, 0, wz);
-      // optional: slight Y offset for visual layering if needed
-      mesh.position.y = 0;
+      // tiny offset above the large ground to avoid z-fighting
+      mesh.position.y = 0.08;
       // If different tile types need visual changes later, we can switch materials or visibility here
       mesh.visible = true;
     }
