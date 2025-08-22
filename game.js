@@ -271,20 +271,27 @@ function draw() {
     }
   }
 
+  // compute player's screen position (center of tile)
+  const playerScreenX = Math.round(p.x * TILE - camX + TILE/2);
+  const playerScreenY = Math.round(p.y * TILE - camY + TILE/2);
+
   // draw player blob sprite (single-frame image)
   if (state.playerSprite) {
-    const drawW = p.w; // use sprite native size (12)
-    const drawH = p.h; // use sprite native size (14)
-    // Scale up slightly for readability at logical resolution (2x)
-    const scaleUp = 2;
-    ctx.drawImage(state.playerSprite, screenX - (drawW*scaleUp)/2, screenY - (drawH*scaleUp)/2, drawW*scaleUp, drawH*scaleUp);
+    // native sprite size
+    const nativeW = p.w; // 12
+    const nativeH = p.h; // 14
+    // fit sprite inside tile with slight padding, preserve aspect ratio
+    const padding = 0.1; // 10% padding
+    const maxSize = TILE * (1 - padding * 2);
+    const scaleFit = maxSize / Math.max(nativeW, nativeH);
+    const drawW = Math.round(nativeW * scaleFit);
+    const drawH = Math.round(nativeH * scaleFit);
+    ctx.drawImage(state.playerSprite, playerScreenX - drawW / 2, playerScreenY - drawH / 2, drawW, drawH);
   } else {
     // draw a single blue circle at player's screen position
-    const screenX = Math.round(p.x * TILE - camX + TILE/2);
-    const screenY = Math.round(p.y * TILE - camY + TILE/2);
     ctx.fillStyle = '#2b7bff';
     ctx.beginPath();
-    ctx.arc(screenX, screenY, Math.max(4, TILE/2 - 2), 0, Math.PI*2);
+    ctx.arc(playerScreenX, playerScreenY, Math.max(4, TILE/2 - 2), 0, Math.PI*2);
     ctx.fill();
   }
 
