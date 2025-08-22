@@ -172,6 +172,16 @@ function wrapCoord(v, max) {
   return ((v % max) + max) % max;
 }
 
+/* Add: compute shortest signed delta between two coords on a torus */
+function shortestDelta(curr, target, max) {
+  let d = target - curr;
+  if (Math.abs(d) > max / 2) {
+    if (d > 0) d -= max;
+    else d += max;
+  }
+  return d;
+}
+
 function getTile(x,y) {
   if (!state.map) return 0;
   // wrap coordinates to create infinite world
@@ -192,20 +202,23 @@ function update(dt) {
   const p = state.player;
 
   if (p.moving) {
-    // move toward target tile
-    const dx = p.tx - p.x;
-    const dy = p.ty - p.y;
+    // move toward target tile using shortest wrapped path
+    const dx = shortestDelta(p.x, p.tx, state.map.width);
+    const dy = shortestDelta(p.y, p.ty, state.map.height);
     const dist = Math.hypot(dx, dy);
     const move = p.speed * dt;
     if (dist <= move) {
-      // snap to target
-      p.x = p.tx;
-      p.y = p.ty;
+      // snap to target and ensure position is wrapped into map bounds
+      p.x = wrapCoord(p.tx, state.map.width);
+      p.y = wrapCoord(p.ty, state.map.height);
       p.moving = false;
     } else {
-      // normalize and step
+      // normalize and step (preserves wrap-aware shortest path)
       p.x += (dx / dist) * move;
       p.y += (dy / dist) * move;
+      // keep p position within a reasonable range by wrapping after moving
+      p.x = wrapCoord(p.x, state.map.width);
+      p.y = wrapCoord(p.y, state.map.height);
     }
   } else {
     // not moving: allow starting moves via continuous key press (keeps mobile friendly)
